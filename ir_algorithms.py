@@ -1,6 +1,6 @@
 import openpyxl # for reading excel files
 import re, regex, pickle, numpy as np
-import heapq
+import heapq, math
 
 frequent_terms_num = 2 # removing # of most frequent terms from dictionary
 max_results_num = 20 # maximum number of results to show
@@ -44,9 +44,10 @@ class Posting:
     def __init__(self, doc_id, freq) -> None:
         self.doc_id = doc_id
         self.freq = freq
+        self.weight = None
 
     def __str__(self) -> str:
-        return 'doc_id: ' + str(self.doc_id) + '\tfreq: ' + str(self.freq)
+        return 'doc_id: ' + str(self.doc_id) + '\tfreq: ' + str(self.freq) + '\tweight: ' + str(self.weight)
 
     def __repr__(self) -> str:
         return str(self)
@@ -97,6 +98,8 @@ class IR:
         self.build_docs_dict()
         # removing most frequent items
         self.remove_frequents(frequent_terms_num)
+        #calculating tf-idf weights for each posting
+        self.update_postings_weights()
         # saving the dictionary
         with open('data\\index.pickle', 'wb') as handle:
             pickle.dump(self.dictionary, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -368,6 +371,24 @@ class IR:
             for p in postings:
                 ids.append(p.doc_id)
         return ids
+
+
+    # updating tf-idf weights for every posting
+    def update_postings_weights(self):
+        for key in self.dictionary.keys():
+            plist, doc_freq = self.dictionary[key].plist, self.dictionary[key].term_freq
+            for posting in plist:
+                term_freq = posting.freq
+                posting.weight = self.calculate_tf_idf(term_freq, doc_freq, len(self.docs_dict))
+
+    
+    # updating tf-idf weights for a single posting
+    def calculate_tf_idf(self, term_freq, doc_freq, num_docs):
+        tf_weight = 1 + math.log10(term_freq)
+        idf_weight = math.log10(num_docs/doc_freq)
+        tf_idf = tf_weight * idf_weight
+        return tf_idf
+            
 
 
     # removing k most frequent term from dictionary
