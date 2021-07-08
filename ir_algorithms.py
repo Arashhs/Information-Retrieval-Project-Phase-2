@@ -5,6 +5,10 @@ import heapq, math
 frequent_terms_num = 2 # removing # of most frequent terms from dictionary
 max_results_num = 20 # maximum number of results to show
 
+ranked_retrieval = True # whether or not to use ranked retrieval
+use_index_elimination = True # whether or not to use index elimination technique
+use_champions_list = True # # whether or not to use champions lists technique
+
 arabic_plurals_file = 'arabic_plurals.txt'
 verbs_stems_file = 'verbs_stems.txt'
 
@@ -18,7 +22,7 @@ prefixes = ['ابر', 'باز', 'پاد', 'پارا', 'پسا', 'پیرا', 'ت�
 postfixes = ['اسا', 'آگین', 'گین', 'ومند', 'اک', 'اله', 'انه', 'ین'\
     'ینه', 'دان', 'کار' , 'دیس', 'زار', 'سار', 'ستان', 'سرا', 'فام', 'کده', 'گار', \
         'گان', 'گری', 'گر', 'گون', 'لاخ', 'مان', 'مند', 'ناک', 'نده', 'وار', 'واره',\
-            'واری', 'ور', 'وش', 'ار', 'ان']
+            'واری', 'ور', 'وش']
 
 past_verb_post = ['م', 'ی', '' , 'یم', 'ید', 'ند']
 
@@ -266,6 +270,9 @@ class IR:
     # processing queries
     def process_query(self, query):
         tokens = self.get_tokens(query)
+        if ranked_retrieval:
+            self.process_ranked_query(tokens)
+            return
         if len(tokens) == 1:
             self.process_query_single_word(tokens[0])
         elif len(tokens) > 1:
@@ -359,6 +366,48 @@ class IR:
                 print(index, self.docs_dict[index])
                 showed_results_num += 1
         return result_set
+
+    
+    # Processing queries using rank-based method
+    def process_ranked_query(self, query_tokens):
+        query_terms = list(set(query_tokens))
+        query_terms_freqs = [query_tokens.count(term) for term in query_terms]
+        query_terms_weights = []
+        # calculating query-terms weights
+        for i in range(len(query_terms)):
+            term = query_terms[i]
+            term_freq = query_terms_freqs[i]
+            doc_freq = self.dictionary[term].term_freq
+            weight = self.calculate_tf_idf(term_freq, doc_freq, len(self.docs_dict))
+            query_terms_weights.append(weight)
+        # normalizing query weights
+        query_len = sum([weight**2 for weight in query_terms_weights])
+        query_len = math.sqrt(query_len)
+        query_terms_norm_weights = [weight/query_len for weight in query_terms_weights]
+        # calculating each doc's scores
+        scores = [0] * (len(self.docs_dict) + 1)
+        doc_lens = [0] * (len(self.docs_dict) + 1)
+        for i in range(len(query_terms)):
+            query_term = query_terms[i]
+            w_tq = query_terms_norm_weights[i]
+            plist = self.dictionary[query_term].plist
+            for posting in plist:
+                doc_id, w_td = posting.doc_id, posting.weight
+                scores[doc_id] += w_td * w_tq
+                doc_lens[doc_id] += w_td**2
+        for i in range(1, len(scores)):
+            if doc_lens[i] != 0:
+                doc_lens[i] = math.sqrt(doc_lens[i])
+                # normalizing doc-weights vectors by their len in score
+                scores[i] /= doc_lens[i]
+        return scores
+
+            
+
+
+
+
+
 
 
 
