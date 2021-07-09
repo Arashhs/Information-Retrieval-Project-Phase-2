@@ -8,7 +8,8 @@ champions_list_size = 100
 
 ranked_retrieval = True # whether or not to use ranked retrieval
 use_index_elimination = True # whether or not to use index elimination technique
-use_champions_list = True # # whether or not to use champions lists technique
+use_champions_list = True # whether or not to use champions lists technique
+use_heap = True # whether or not to use max-heap in order to return top_k results
 
 arabic_plurals_file = 'arabic_plurals.txt'
 verbs_stems_file = 'verbs_stems.txt'
@@ -429,22 +430,30 @@ class IR:
                 scores[key] /= docs_lens[key]
         top_k = self.retrieve_top_k(scores, max_results_num)
         self.show_results(top_k)
-        return scores
+        return top_k
 
             
     # getting top_k highest cosine scores
     def retrieve_top_k(self, scores, k):
-        heap = []
-        # building the heap (actually a min heap with -score equivalent max heap with score)
-        for item in scores.items():
-            heapq.heappush(heap, (-item[1], item[0]))
-        # getting k highest scores (equivalent to k smallest -scores)
         top_k = []
-        for i in range(k):
-            if len(heap) < i+1:
-                break
-            item = heapq.heappop(heap)
-            top_k.append([item[1], -item[0]])
+        if use_heap:
+            heap = []
+            # building the heap (actually a min heap with -score equivalent max heap with score)
+            for item in scores.items():
+                heapq.heappush(heap, (-item[1], item[0]))
+            # getting k highest scores (equivalent to k smallest -scores)
+            for i in range(k):
+                if len(heap) == 0:
+                    break
+                item = heapq.heappop(heap)
+                top_k.append([item[1], -item[0]])
+        else:
+            scores = list(scores.items())
+            scores = sorted(scores, key=lambda item: item[1], reverse=True)
+            if len(scores) <= k:
+                top_k = scores
+            else:
+                top_k = scores[:k]
         return top_k
 
     
