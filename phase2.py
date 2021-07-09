@@ -12,7 +12,6 @@ def main():
             ir_system.build_inverted_index(file_name)
         elif option == '2':
             ir_system.load_inverted_index()
-            # ir_system.update_postings_weights() ############# TO BE DELETED
             query = input("Enter your query: ")
             ir_system.process_query(query)
         print('\ndone\n')

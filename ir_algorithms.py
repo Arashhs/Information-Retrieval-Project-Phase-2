@@ -8,7 +8,7 @@ champions_list_size = 100
 
 ranked_retrieval = True # whether or not to use ranked retrieval
 use_index_elimination = True # whether or not to use index elimination technique
-use_champions_list = False # # whether or not to use champions lists technique
+use_champions_list = True # # whether or not to use champions lists technique
 
 arabic_plurals_file = 'arabic_plurals.txt'
 verbs_stems_file = 'verbs_stems.txt'
@@ -62,6 +62,7 @@ class PostingsList:
     def __init__(self) -> None:
         self.plist = []
         self.term_freq = 0
+        self.champs_list = []
 
     def __str__(self) -> str:
         return 'term_freq: ' + str(self.term_freq) + '\t' + str(self.plist)
@@ -83,7 +84,6 @@ class IR:
         self.docs_dict = dict()
         self.arabic_plurals_dict = dict()
         self.verbs_dict = dict()
-        self.champions_lists = dict()
 
     
     # building the inverted index
@@ -396,33 +396,40 @@ class IR:
         query_len = sum([weight**2 for weight in query_terms_weights])
         query_len = math.sqrt(query_len)
         query_terms_norm_weights = [weight/query_len for weight in query_terms_weights]
-        if not use_champions_list:
-            # calculating each doc's scores
-            # scores = [0] * (len(self.docs_dict) + 1)
-            scores = dict()
-            # doc_lens = [0] * (len(self.docs_dict) + 1)
-            docs_lens = dict()
-            for term in query_terms:
+        # calculating each doc's scores
+        # scores = [0] * (len(self.docs_dict) + 1)
+        scores = dict()
+        # doc_lens = [0] * (len(self.docs_dict) + 1)
+        docs_lens = dict()
+        for term in query_terms:
+            posting_ids = None
+            if use_champions_list:
+                posting_ids = self.get_champs_ids(term)
+            else:
                 posting_ids = self.get_posting_ids(term)
-                for posting_id in posting_ids:
-                    scores[posting_id] = 0
-                    docs_lens[posting_id] = 0
-            for i in range(len(query_terms)):
-                query_term = query_terms[i]
-                w_tq = query_terms_norm_weights[i]
+            for posting_id in posting_ids:
+                scores[posting_id] = 0
+                docs_lens[posting_id] = 0
+        for i in range(len(query_terms)):
+            query_term = query_terms[i]
+            w_tq = query_terms_norm_weights[i]
+            plist = None
+            if use_champions_list:
+                plist = self.dictionary[query_term].champs_list
+            else:
                 plist = self.dictionary[query_term].plist
-                for posting in plist:
-                    doc_id, w_td = posting.doc_id, posting.weight
-                    scores[doc_id] += w_td * w_tq
-                    docs_lens[doc_id] += w_td**2
-            for key in scores.keys():
-                if docs_lens[key] != 0:
-                    docs_lens[key] = math.sqrt(docs_lens[key])
-                    # normalizing doc-weights vectors by their len in score
-                    scores[key] /= docs_lens[key]
-            top_k = self.retrieve_top_k(scores, max_results_num)
-            self.show_results(top_k)
-            return scores
+            for posting in plist:
+                doc_id, w_td = posting.doc_id, posting.weight
+                scores[doc_id] += w_td * w_tq
+                docs_lens[doc_id] += w_td**2
+        for key in scores.keys():
+            if docs_lens[key] != 0:
+                docs_lens[key] = math.sqrt(docs_lens[key])
+                # normalizing doc-weights vectors by their len in score
+                scores[key] /= docs_lens[key]
+        top_k = self.retrieve_top_k(scores, max_results_num)
+        self.show_results(top_k)
+        return scores
 
             
     # getting top_k highest cosine scores
@@ -430,14 +437,14 @@ class IR:
         heap = []
         # building the heap (actually a min heap with -score equivalent max heap with score)
         for item in scores.items():
-            heapq.heappush(heap, (-item[1], -item[0]))
+            heapq.heappush(heap, (-item[1], item[0]))
         # getting k highest scores (equivalent to k smallest -scores)
         top_k = []
         for i in range(k):
             if len(heap) < i+1:
                 break
             item = heapq.heappop(heap)
-            top_k.append([-item[1], -item[0]])
+            top_k.append([item[1], -item[0]])
         return top_k
 
     
@@ -464,6 +471,17 @@ class IR:
                 ids.append(p.doc_id)
         return ids
 
+    
+    # getting champions-lists posting ids
+    def get_champs_ids(self, term):
+        ids = []
+        if term in self.dictionary:
+            postings_list = self.dictionary[term]
+            postings = postings_list.champs_list
+            for p in postings:
+                ids.append(p.doc_id)
+        return ids
+
 
     # updating tf-idf weights for every posting
     def update_postings_weights(self):
@@ -477,8 +495,13 @@ class IR:
     # building champions lists weights
     def build_champions_lists(self):
         for term in self.dictionary.keys():
-            plist = self.dictionary[]
-            pass
+            plist = self.dictionary[term].plist
+            champs_list = self.dictionary[term].champs_list
+            top_postings = heapq.nlargest(champions_list_size, plist, key=lambda p: p.weight)
+            top_postings = sorted(top_postings, key=lambda p: p.doc_id)
+            for posting in top_postings:
+                champs_list.append(posting)
+
     
     # updating tf-idf weights for a single posting
     def calculate_tf_idf(self, term_freq, doc_freq, num_docs):
