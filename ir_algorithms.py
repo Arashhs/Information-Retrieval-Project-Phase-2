@@ -4,10 +4,11 @@ import heapq, math
 
 frequent_terms_num = 2 # removing # of most frequent terms from dictionary
 max_results_num = 20 # maximum number of results to show
+champions_list_size = 100
 
 ranked_retrieval = True # whether or not to use ranked retrieval
 use_index_elimination = True # whether or not to use index elimination technique
-use_champions_list = True # # whether or not to use champions lists technique
+use_champions_list = False # # whether or not to use champions lists technique
 
 arabic_plurals_file = 'arabic_plurals.txt'
 verbs_stems_file = 'verbs_stems.txt'
@@ -82,6 +83,7 @@ class IR:
         self.docs_dict = dict()
         self.arabic_plurals_dict = dict()
         self.verbs_dict = dict()
+        self.champions_lists = dict()
 
     
     # building the inverted index
@@ -103,7 +105,13 @@ class IR:
         # removing most frequent items
         self.remove_frequents(frequent_terms_num)
         #calculating tf-idf weights for each posting
+        print('Updating Posting Weights...')
         self.update_postings_weights()
+        print('Posting Weights Updated!')
+        # building champions lists for each term
+        print('Building Champions Lists...')
+        self.build_champions_lists()
+        print('Champions Lists have been built!')
         # saving the dictionary
         with open('data\\index.pickle', 'wb') as handle:
             pickle.dump(self.dictionary, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -370,7 +378,11 @@ class IR:
     
     # Processing queries using rank-based method
     def process_ranked_query(self, query_tokens):
-        query_terms = list(set(query_tokens))
+        query_terms_temp = list(set(query_tokens))
+        query_terms = []
+        for term in query_terms_temp:
+            if term in self.dictionary:
+                query_terms.append(term)
         query_terms_freqs = [query_tokens.count(term) for term in query_terms]
         query_terms_weights = []
         # calculating query-terms weights
@@ -384,29 +396,60 @@ class IR:
         query_len = sum([weight**2 for weight in query_terms_weights])
         query_len = math.sqrt(query_len)
         query_terms_norm_weights = [weight/query_len for weight in query_terms_weights]
-        # calculating each doc's scores
-        scores = [0] * (len(self.docs_dict) + 1)
-        doc_lens = [0] * (len(self.docs_dict) + 1)
-        for i in range(len(query_terms)):
-            query_term = query_terms[i]
-            w_tq = query_terms_norm_weights[i]
-            plist = self.dictionary[query_term].plist
-            for posting in plist:
-                doc_id, w_td = posting.doc_id, posting.weight
-                scores[doc_id] += w_td * w_tq
-                doc_lens[doc_id] += w_td**2
-        for i in range(1, len(scores)):
-            if doc_lens[i] != 0:
-                doc_lens[i] = math.sqrt(doc_lens[i])
-                # normalizing doc-weights vectors by their len in score
-                scores[i] /= doc_lens[i]
-        return scores
+        if not use_champions_list:
+            # calculating each doc's scores
+            # scores = [0] * (len(self.docs_dict) + 1)
+            scores = dict()
+            # doc_lens = [0] * (len(self.docs_dict) + 1)
+            docs_lens = dict()
+            for term in query_terms:
+                posting_ids = self.get_posting_ids(term)
+                for posting_id in posting_ids:
+                    scores[posting_id] = 0
+                    docs_lens[posting_id] = 0
+            for i in range(len(query_terms)):
+                query_term = query_terms[i]
+                w_tq = query_terms_norm_weights[i]
+                plist = self.dictionary[query_term].plist
+                for posting in plist:
+                    doc_id, w_td = posting.doc_id, posting.weight
+                    scores[doc_id] += w_td * w_tq
+                    docs_lens[doc_id] += w_td**2
+            for key in scores.keys():
+                if docs_lens[key] != 0:
+                    docs_lens[key] = math.sqrt(docs_lens[key])
+                    # normalizing doc-weights vectors by their len in score
+                    scores[key] /= docs_lens[key]
+            top_k = self.retrieve_top_k(scores, max_results_num)
+            self.show_results(top_k)
+            return scores
 
             
+    # getting top_k highest cosine scores
+    def retrieve_top_k(self, scores, k):
+        heap = []
+        # building the heap (actually a min heap with -score equivalent max heap with score)
+        for item in scores.items():
+            heapq.heappush(heap, (-item[1], -item[0]))
+        # getting k highest scores (equivalent to k smallest -scores)
+        top_k = []
+        for i in range(k):
+            if len(heap) < i+1:
+                break
+            item = heapq.heappop(heap)
+            top_k.append([-item[1], -item[0]])
+        return top_k
 
-
-
-
+    
+    # printing query results for the user
+    def show_results(self, results):
+        result_ids = [res[0] for res in results]
+        if len(results) == 0:
+            print("No result found!")
+        else:
+            print('Results: (Showing top ' + str(max_results_num) + ')')
+            for index in result_ids:
+                print(index, self.docs_dict[index])
 
 
 
@@ -430,6 +473,12 @@ class IR:
                 term_freq = posting.freq
                 posting.weight = self.calculate_tf_idf(term_freq, doc_freq, len(self.docs_dict))
 
+
+    # building champions lists weights
+    def build_champions_lists(self):
+        for term in self.dictionary.keys():
+            plist = self.dictionary[]
+            pass
     
     # updating tf-idf weights for a single posting
     def calculate_tf_idf(self, term_freq, doc_freq, num_docs):
